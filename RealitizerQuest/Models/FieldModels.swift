@@ -214,7 +214,7 @@ func makeBattleStage(_ theme: StageTheme) throws -> ModelAssetDefinition {
     ).validated()
 }
 
-/// Battle effects: a sword slash, a fireball, a healing ring and the dragon's breath.
+/// Battle effects: a sword slash, a fireball and a healing ring. The dragon's fire is a particle emitter.
 func makeEffects() throws -> ModelAssetDefinition {
     let slash = try MeshBuilder.box(size: [0.9, 0.03, 0.01])
     let fire = try merge([
@@ -223,9 +223,6 @@ func makeEffects() throws -> ModelAssetDefinition {
         MeshBuilder.cone(radius: 0.16, height: 0.4, segments: 8).moved([0, 0.22, 0]),
     ])
     let ring = try MeshBuilder.revolve(profile: [[0.35, 0], [0.42, 0.02], [0.42, 0.5], [0.35, 0.52]], segments: 32)
-    let breath = try MeshBuilder.cone(radius: 0.7, height: 2.6, segments: 16)
-        .noiseDisplaced(amplitude: 0.08, frequency: 3, seed: 2)
-        .moved([0, 0, 1.3], rotation: .x(.pi / 2))
     var slashMaterial = material("slash", [1, 1, 1])
     slashMaterial.shading = .unlit
     slashMaterial.unlitToneMapping = false
@@ -235,13 +232,11 @@ func makeEffects() throws -> ModelAssetDefinition {
             slashMaterial,
             material("fire", [1, 0.35, 0.05], glow: 2.5),
             material("heal", [0.4, 1, 0.6], glow: 2, doubleSided: true),
-            material("breath", [1, 0.3, 0.05], glow: 2.5, doubleSided: true),
         ],
         parts: [
             part("slash", slash, "slash"),
             part("fire", fire, "fire"),
             part("heal", ring, "heal"),
-            part("breath", breath, "breath"),
         ]
     ).validated()
 }

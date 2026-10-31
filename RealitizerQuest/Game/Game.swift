@@ -10,7 +10,7 @@ enum MonsterKind: CaseIterable, Sendable {
         case .mokorin: "モコリン"
         case .kinokoro: "キノコロ"
         case .yoroigani: "ヨロイガニ"
-        case .varg: "黒竜ヴァルグ"
+        case .varg: "炎竜ヴァルグ"
         }
     }
     var maxHP: Int { switch self { case .mokorin: 8; case .kinokoro: 15; case .yoroigani: 30; case .varg: 170 } }
@@ -73,7 +73,7 @@ enum Spell: CaseIterable {
 @MainActor
 @Observable
 final class Game {
-    enum Mode { case loading, title, field, battle, ending }
+    enum Mode { case loading, title, field, battle, ending, bestiary }
     enum Phase { case idle, command, spells, busy }
 
     var mode: Mode = .loading
@@ -109,6 +109,10 @@ final class Game {
             mode = .title
             // Development shortcut: launch with `-debugBattle <mokorin|kinokoro|yoroigani|varg>`.
             let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "-bestiary"), i + 1 < args.count, let index = Int(args[i + 1]) {
+                bestiaryIndex = index
+                openBestiary()
+            }
             if let i = args.firstIndex(of: "-debugBattle"), i + 1 < args.count,
                let kind = MonsterKind.allCases.first(where: { "\($0)" == args[i + 1] }) {
                 startAdventure()
@@ -132,9 +136,35 @@ final class Game {
         scene.showField(hero: WorldMap.world(position), yaw: facing.yaw)
         messages = [
             "王さま「よくぞ来た、ゆうしゃよ。」",
-            "「北東の山に 黒竜ヴァルグが すみついた。」",
+            "「北東の山に 炎竜ヴァルグが すみついた。」",
             "「町で休み、力をつけてから むかうのじゃ。」",
         ]
+    }
+
+    // MARK: - Bestiary
+
+    var bestiaryIndex = 0
+    var bestiaryDisplay: GameScene.Display = .shaded
+
+    func openBestiary() {
+        mode = .bestiary
+        showBestiaryEntry(bestiaryIndex)
+    }
+
+    func showBestiaryEntry(_ index: Int) {
+        let all = MonsterKind.allCases
+        bestiaryIndex = (index + all.count) % all.count
+        scene.showBestiary(all[bestiaryIndex])
+        scene.setDisplay(bestiaryDisplay)
+    }
+
+    func setBestiaryDisplay(_ display: GameScene.Display) {
+        bestiaryDisplay = display
+        scene.setDisplay(display)
+    }
+
+    func playBestiaryClip(_ clip: String) {
+        if clip == "breath" { scene.playBreath() } else { scene.playMonster(clip) }
     }
 
     func backToTitle() {
@@ -317,11 +347,12 @@ final class Game {
         let breath = kind.isBoss && (bossTurn % 3 == 0 || Float.random(in: 0..<1) < 0.2)
         var damage: Int
         if breath {
-            messages = ["\(kind.name)は 灼熱の ほのおを はいた！"]
-            scene.playMonster("breath")
-            await wait(0.6)
+            messages = ["\(kind.name)は 大きく 息を すいこんだ……！"]
             scene.playBreath()
-            await wait(0.5)
+            await wait(0.65)
+            messages.append("灼熱の ほのおが ゆうしゃを つつむ！")
+            flashCount += 1
+            await wait(0.6)
             damage = Int.random(in: 26...36)
         } else {
             messages = ["\(kind.name)の こうげき！"]

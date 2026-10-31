@@ -1,6 +1,7 @@
 import Realitizer
 import RealitizerRealityKit
 import RealityKit
+import UIKit
 import simd
 
 /// Owns every RealityKit entity. Assets are generated and compiled once in `load()`;
@@ -26,11 +27,22 @@ final class GameScene {
     private var time: Float = 0
     private var tweens: [Tween] = []
 
+    private let fireBreath = Entity()
+    private let embers = Entity()
+    private let mouthLight = PointLight()
+
     enum CameraMode {
         case follow
         case fixed(eye: SIMD3<Float>, target: SIMD3<Float>)
         case orbit(center: SIMD3<Float>, radius: Float, height: Float)
+        /// Driven by the bestiary's drag and pinch gestures.
+        case inspect(center: SIMD3<Float>)
     }
+
+    /// Bestiary camera angles, written by the gestures.
+    var inspectYaw: Float = 0.6
+    var inspectPitch: Float = 0.25
+    var inspectDistance: Float = 3
 
     private(set) var isLoaded = false
 
@@ -69,10 +81,24 @@ final class GameScene {
         battleRoot.addChild(showcaseHero.instance.root)
 
         effects = try compile(assets.effects).instantiate()
-        for name in ["slash", "fire", "heal", "breath"] {
+        for name in ["slash", "fire", "heal"] {
             try effects.part(rid(name)).isEnabled = false
         }
         battleRoot.addChild(effects.root)
+
+        let mouth = try monsters[.varg]!.instance.socket(rid("mouth"))
+        fireBreath.components.set(Self.flameEmitter())
+        embers.components.set(Self.emberEmitter())
+        mouthLight.light.color = .init(red: 1, green: 0.5, blue: 0.15, alpha: 1)
+        mouthLight.light.intensity = 0
+        mouthLight.light.attenuationRadius = 7
+        mouthLight.position = [0, 0, 0.6]
+        // Particles leave along the emitter's +y; turn it to face out of the mouth (+z).
+        fireBreath.orientation = simd_quatf(from: [0, 1, 0], to: [0, 0, 1])
+        embers.orientation = simd_quatf(from: [0, 1, 0], to: simd_normalize([0, 0.5, 1]))
+        mouth.addChild(fireBreath)
+        mouth.addChild(embers)
+        mouth.addChild(mouthLight)
 
         root.addChild(fieldRoot)
         root.addChild(battleRoot)
@@ -132,6 +158,42 @@ final class GameScene {
         cameraMode = .orbit(center: [0, 0.75, 0], radius: 3.2, height: 0.6)
     }
 
+    func showBestiary(_ kind: MonsterKind) {
+        showBattleStage(kind.isBoss ? .lair : kind == .yoroigani ? .forest : .plains)
+        showcaseHero.instance.root.isEnabled = false
+        show(monster: kind)
+        inspectYaw = 0.6
+        inspectPitch = kind.isBoss ? 0.15 : 0.22
+        inspectDistance = kind.isBoss ? 9.5 : 2.6
+        // Aim below the model's middle so it sits above the entry card.
+        cameraMode = .inspect(center: kind.isBoss ? [0, 0.75, -0.3] : [0, 0.18, 0])
+    }
+
+    enum Display: CaseIterable { case shaded, wireframe, parts }
+
+    /// Swaps every material of the shown monster for a diagnostic one.
+    func setDisplay(_ display: Display) {
+        guard let instance = activeMonster?.instance else { return }
+        var overrides: [AnyRealitizerID: any Material] = [:]
+        switch display {
+        case .shaded:
+            break
+        case .wireframe:
+            var lines = UnlitMaterial(color: .init(red: 0.45, green: 0.95, blue: 1, alpha: 1))
+            lines.triangleFillMode = .lines
+            for definition in instance.definition.materials { overrides[definition.id] = lines }
+        case .parts:
+            for (index, definition) in instance.definition.materials.enumerated() {
+                let hue = CGFloat(index) / CGFloat(max(instance.definition.materials.count, 1))
+                overrides[definition.id] = SimpleMaterial(
+                    color: .init(hue: hue, saturation: 0.65, brightness: 0.95, alpha: 1), roughness: 0.6, isMetallic: false)
+            }
+        }
+        try? instance.setVisualizationMaterials(overrides)
+    }
+
+    func statistics(of kind: MonsterKind) -> ModelStatistics? { monsters[kind]?.instance.statistics }
+
     private func showBattleStage(_ theme: StageTheme) {
         fieldRoot.isEnabled = false
         battleRoot.isEnabled = true
@@ -140,7 +202,10 @@ final class GameScene {
     }
 
     private func show(monster kind: MonsterKind) {
-        for actor in monsters.values { actor.instance.root.isEnabled = false }
+        for actor in monsters.values {
+            actor.instance.root.isEnabled = false
+            try? actor.instance.setVisualizationMaterials([:])
+        }
         let actor = monsters[kind]!
         actor.instance.root.isEnabled = true
         actor.instance.root.transform = Transform()
@@ -233,18 +298,70 @@ final class GameScene {
         }
     }
 
+    /// Plays the dragon's "breath" clip and pours flame particles from its mouth while the jaw is open.
     func playBreath() {
-        guard let breath = try? effects.part(rid("breath")),
-              let head = try? monsters[.varg]?.instance.part(rid("head")) else { return }
-        tween(0.9) { t in
-            breath.isEnabled = t < 1
-            let origin = head.position(relativeTo: self.battleRoot) + [0, -0.1, 0.5]
-            let grow = min(t * 3, 1)
-            breath.transform = Transform(
-                scale: [grow, grow, grow * 1.6],
-                rotation: simd_quatf(angle: t * 6, axis: [0, 0, 1]) * simd_quatf(angle: -0.18, axis: [1, 0, 0]),
-                translation: origin)
+        monsters[.varg]?.play("breath", then: "idle")
+        let flame = fireBreath, light = mouthLight
+        tween(1.75) { t in
+            let blowing = t > 0.33 && t < 0.88
+            if var emitter = flame.components[ParticleEmitterComponent.self], emitter.isEmitting != blowing {
+                emitter.isEmitting = blowing
+                flame.components.set(emitter)
+            }
+            let flicker = Float.random(in: 0.75...1.0)
+            light.light.intensity = blowing ? 60_000 * flicker : (t < 0.33 ? 6_000 * t / 0.33 : 0)
         }
+    }
+
+    private static func flameEmitter() -> ParticleEmitterComponent {
+        var emitter = ParticleEmitterComponent()
+        emitter.emitterShape = .sphere
+        emitter.emitterShapeSize = [0.06, 0.06, 0.06]
+        emitter.birthDirection = .local
+        emitter.emissionDirection = [0, 1, 0]
+        emitter.speed = 4.2
+        emitter.speedVariation = 1
+        emitter.fieldSimulationSpace = .global
+        emitter.isEmitting = false
+        emitter.mainEmitter.birthRate = 900
+        emitter.mainEmitter.lifeSpan = 0.65
+        emitter.mainEmitter.lifeSpanVariation = 0.2
+        emitter.mainEmitter.spreadingAngle = 0.16
+        emitter.mainEmitter.size = 0.13
+        emitter.mainEmitter.sizeMultiplierAtEndOfLifespan = 4.5
+        emitter.mainEmitter.dampingFactor = 0
+        emitter.mainEmitter.acceleration = .zero
+        emitter.mainEmitter.noiseStrength = 0.1
+        emitter.mainEmitter.opacityCurve = .linearFadeOut
+        emitter.mainEmitter.blendMode = .additive
+        emitter.mainEmitter.color = .evolving(
+            start: .single(.init(red: 1, green: 0.72, blue: 0.25, alpha: 1)),
+            end: .single(.init(red: 0.7, green: 0.08, blue: 0.02, alpha: 1)))
+        return emitter
+    }
+
+    /// A few sparks that keep drifting out of the mouth, so the dragon smoulders even when idle.
+    private static func emberEmitter() -> ParticleEmitterComponent {
+        var emitter = ParticleEmitterComponent()
+        emitter.emitterShape = .sphere
+        emitter.emitterShapeSize = [0.05, 0.03, 0.05]
+        emitter.birthDirection = .local
+        emitter.emissionDirection = [0, 1, 0]
+        emitter.speed = 0.35
+        emitter.fieldSimulationSpace = .global
+        emitter.mainEmitter.birthRate = 28
+        emitter.mainEmitter.lifeSpan = 1.4
+        emitter.mainEmitter.spreadingAngle = 0.6
+        emitter.mainEmitter.size = 0.018
+        emitter.mainEmitter.sizeMultiplierAtEndOfLifespan = 0.2
+        emitter.mainEmitter.acceleration = [0, 0.5, 0]
+        emitter.mainEmitter.noiseStrength = 0.2
+        emitter.mainEmitter.opacityCurve = .linearFadeOut
+        emitter.mainEmitter.blendMode = .additive
+        emitter.mainEmitter.color = .evolving(
+            start: .single(.init(red: 1, green: 0.75, blue: 0.3, alpha: 1)),
+            end: .single(.init(red: 0.9, green: 0.2, blue: 0.05, alpha: 1)))
+        return emitter
     }
 
     private func tween(_ duration: Float, _ step: @escaping (Float) -> Void) {
@@ -285,6 +402,10 @@ final class GameScene {
         case .orbit(let center, let radius, let height):
             let a = time * 0.25
             eye = center + [sin(a) * radius, height, cos(a) * radius]
+            target = center
+        case .inspect(let center):
+            let flat = cos(inspectPitch) * inspectDistance
+            eye = center + [sin(inspectYaw) * flat, sin(inspectPitch) * inspectDistance, cos(inspectYaw) * flat]
             target = center
         }
         currentEye = eye

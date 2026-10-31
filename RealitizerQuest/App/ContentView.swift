@@ -26,7 +26,9 @@ struct ContentView: View {
             case .loading:
                 LoadingView(error: game.loadError)
             case .title:
-                TitleView { game.startAdventure() }
+                TitleView(start: game.startAdventure, openBestiary: game.openBestiary)
+            case .bestiary:
+                BestiaryView(game: game)
             case .field:
                 FieldHUD(game: game)
             case .battle:
@@ -286,6 +288,7 @@ struct CommandWindow: View {
 
 struct TitleView: View {
     let start: () -> Void
+    let openBestiary: () -> Void
 
     var body: some View {
         VStack(spacing: 18) {
@@ -297,7 +300,7 @@ struct TitleView: View {
                 Text("QUEST")
                     .font(.system(size: 54, weight: .black, design: .serif))
                     .tracking(6)
-                Text("黒竜と はじまりの国")
+                Text("炎竜と はじまりの国")
                     .font(.system(size: 17, weight: .bold, design: .rounded))
             }
             .foregroundStyle(
@@ -316,6 +319,16 @@ struct TitleView: View {
                     .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white, lineWidth: 3))
             }
             .buttonStyle(.plain)
+            Button(action: openBestiary) {
+                Label("モンスター図鑑", systemImage: "book.closed.fill")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 10)
+                    .foregroundStyle(.white)
+                    .background(.black.opacity(0.55), in: .rect(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.8), lineWidth: 2))
+            }
+            .buttonStyle(.plain)
             Text("3D models are generated in Swift with Realitizer")
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.7))
@@ -332,7 +345,7 @@ struct EndingView: View {
             Spacer().frame(height: 50)
             RPGWindow {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("黒竜ヴァルグは たおれ、")
+                    Text("炎竜ヴァルグは たおれ、")
                     Text("国に ふたたび 朝が おとずれた。")
                     Text("ゆうしゃの 名は 長く 語りつがれたという。")
                 }
