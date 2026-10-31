@@ -157,8 +157,8 @@ func makeBattleStage(_ theme: StageTheme) throws -> ModelAssetDefinition {
     case .forest: ([0.24, 0.48, 0.2], [0.16, 0.34, 0.14], [0.2, 0.38, 0.5], [0.55, 0.75, 0.6])
     case .lair: ([0.22, 0.17, 0.25], [0.1, 0.07, 0.12], [0.06, 0.02, 0.1], [0.5, 0.12, 0.2])
     }
-    let ringSurface = try MeshBuilder.surface(uSegments: 32, vSegments: 6) { uv in
-        let a = uv.x * 2 * .pi, r = 0.3 + (1 - uv.y) * 8.7
+    let ringSurface = try MeshBuilder.surface(uSegments: 40, vSegments: 10) { uv in
+        let a = uv.x * 2 * .pi, r = 0.3 + (1 - uv.y) * 14.7
         return [cos(a) * r, 0, -sin(a) * r]
     }
     // The ring surface cannot reach r = 0 without degenerate triangles; a thin disc fills the hole.
@@ -167,11 +167,12 @@ func makeBattleStage(_ theme: StageTheme) throws -> ModelAssetDefinition {
         let ring = 0.5 + 0.5 * sin(simd_length(SIMD2(v.position.x, v.position.z)) * 2.2)
         return RGBAColor(sRGB: floorA).interpolated(to: RGBAColor(sRGB: floorB), fraction: ring)
     }
-    let sky = try MeshBuilder.surface(uSegments: 40, vSegments: 8) { uv in
-        let a = .pi * 0.05 + uv.x * .pi * 0.9, r: Float = 9
-        return [-cos(a) * r, uv.y * 9 - 0.1, -sin(a) * r]
+    // A full ring, so the bestiary camera can circle the monster without seeing past the backdrop.
+    let sky = try MeshBuilder.surface(uSegments: 72, vSegments: 8) { uv in
+        let a = uv.x * 2 * .pi, r: Float = 15
+        return [-cos(a) * r, uv.y * 12 - 0.1, -sin(a) * r]
     }.coloring { v in
-        RGBAColor(sRGB: skyLow).interpolated(to: RGBAColor(sRGB: skyTop), fraction: min(max(v.position.y / 7, 0), 1))
+        RGBAColor(sRGB: skyLow).interpolated(to: RGBAColor(sRGB: skyTop), fraction: min(max(v.position.y / 9, 0), 1))
     }
 
     var props: [MeshData] = []

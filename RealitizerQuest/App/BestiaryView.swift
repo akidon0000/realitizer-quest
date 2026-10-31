@@ -172,7 +172,7 @@ struct BestiaryView: View {
             .onChanged { value in
                 let base = pinchBase ?? game.scene.inspectDistance
                 pinchBase = base
-                let limit: ClosedRange<Float> = kind.isBoss ? 3...14 : 1...5
+                let limit: ClosedRange<Float> = kind.isBoss ? 3...13 : 1...5
                 game.scene.inspectDistance = min(max(base / Float(value.magnification), limit.lowerBound), limit.upperBound)
             }
             .onEnded { _ in pinchBase = nil }

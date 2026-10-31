@@ -86,16 +86,20 @@ final class GameScene {
         }
         battleRoot.addChild(effects.root)
 
-        let mouth = try monsters[.varg]!.instance.socket(rid("mouth"))
+        // Fire hangs from the skull part so it follows the head exactly; the tip of the snout is at z = 0.66.
+        let skull = try monsters[.varg]!.instance.part(rid("skull"))
+        let mouth = Entity()
+        mouth.position = [0, -0.02, 0.66]
+        skull.addChild(mouth)
         fireBreath.components.set(Self.flameEmitter())
         embers.components.set(Self.emberEmitter())
         mouthLight.light.color = .init(red: 1, green: 0.5, blue: 0.15, alpha: 1)
         mouthLight.light.intensity = 0
         mouthLight.light.attenuationRadius = 7
         mouthLight.position = [0, 0, 0.6]
-        // Particles leave along the emitter's +y; turn it to face out of the mouth (+z).
+        // Particles leave along the emitter entity's +y, so turn +y toward the snout (+z).
         fireBreath.orientation = simd_quatf(from: [0, 1, 0], to: [0, 0, 1])
-        embers.orientation = simd_quatf(from: [0, 1, 0], to: simd_normalize([0, 0.5, 1]))
+        embers.orientation = simd_quatf(from: [0, 1, 0], to: simd_normalize([0, 0.6, 1]))
         mouth.addChild(fireBreath)
         mouth.addChild(embers)
         mouth.addChild(mouthLight)
@@ -303,13 +307,13 @@ final class GameScene {
         monsters[.varg]?.play("breath", then: "idle")
         let flame = fireBreath, light = mouthLight
         tween(1.75) { t in
-            let blowing = t > 0.33 && t < 0.88
+            let blowing = t > 0.45 && t < 0.9  // after the head has swung down
             if var emitter = flame.components[ParticleEmitterComponent.self], emitter.isEmitting != blowing {
                 emitter.isEmitting = blowing
                 flame.components.set(emitter)
             }
             let flicker = Float.random(in: 0.75...1.0)
-            light.light.intensity = blowing ? 60_000 * flicker : (t < 0.33 ? 6_000 * t / 0.33 : 0)
+            light.light.intensity = blowing ? 60_000 * flicker : (t < 0.45 ? 6_000 * t / 0.45 : 0)
         }
     }
 

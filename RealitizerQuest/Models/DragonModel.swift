@@ -7,7 +7,7 @@ import simd
 ///
 /// The torso, neck and tail are one skinned mesh bent by a spine of joints, so the neck curls and
 /// the tail sways smoothly. Head, jaw, horns, wings and legs are rigid parts hanging from those joints.
-/// The "mouth" socket marks where the game attaches its fire particles.
+/// The game attaches its fire particles to the tip of the "skull" part.
 func makeDragon() throws -> ModelAssetDefinition {
     // MARK: Spine
 
@@ -338,8 +338,7 @@ func makeDragon() throws -> ModelAssetDefinition {
             material("ember", [1.0, 0.42, 0.06], glow: 7),
             material("ink", [0.05, 0.02, 0.02], roughness: 0.2),
         ],
-        parts: parts, rig: rig,
-        sockets: [SocketDefinition(id: rid("mouth"), parent: .joint(rid("head")), transform: move([0, -0.02, 0.66]))])
+        parts: parts, rig: rig)
 
     // MARK: Clips
 
