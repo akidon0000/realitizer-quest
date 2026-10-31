@@ -1,0 +1,430 @@
+import Realitizer
+import RealitizerPreview
+import SwiftUI
+import simd
+
+// Original monsters. Every model faces +z (toward the battle camera), feet at y = 0,
+// and provides the clips "idle" (loop), "attack" (once) and "hurt" (once).
+
+/// Mokorin: a round puff of pollen with two leaf ears.
+func makeMokorin() throws -> ModelAssetDefinition {
+    let body = try MeshBuilder.sphere(radius: 0.34, latitudeSegments: 20, longitudeSegments: 32)
+        .noiseDisplaced(amplitude: 0.025, frequency: 7, seed: 3)
+        .recalculatingNormals(smoothingAngle: .pi / 2)
+        .coloring { v in
+            let t = min(max((v.position.y + 0.34) / 0.68, 0), 1)
+            return RGBAColor(sRGB: [1.0, 0.97, 0.75]).interpolated(
+                to: RGBAColor(sRGB: [0.98, 0.82, 0.28]), fraction: t)
+        }
+    let leaf = try MeshBuilder.sphere(radius: 0.2, latitudeSegments: 8, longitudeSegments: 14)
+        .moved([0, 0.17, 0], scale: [0.45, 1, 0.16])
+    let eyeWhite = try MeshBuilder.sphere(radius: 0.07, latitudeSegments: 10, longitudeSegments: 16)
+    let eyes = try merge([
+        eyeWhite.moved([-0.12, 0.06, 0.28], scale: [1, 1.15, 0.7]),
+        eyeWhite.moved([0.12, 0.06, 0.28], scale: [1, 1.15, 0.7]),
+    ])
+    let pupil = try MeshBuilder.sphere(radius: 0.035, latitudeSegments: 8, longitudeSegments: 12)
+    let pupils = merge2(pupil.moved([-0.11, 0.05, 0.33]), pupil.moved([0.11, 0.05, 0.33]))
+    let cheek = try MeshBuilder.sphere(radius: 0.04, latitudeSegments: 6, longitudeSegments: 10)
+    let cheeks = merge2(
+        cheek.moved([-0.2, -0.04, 0.26], scale: [1, 0.6, 0.5]),
+        cheek.moved([0.2, -0.04, 0.26], scale: [1, 0.6, 0.5]))
+    let foot = try MeshBuilder.sphere(radius: 0.08, latitudeSegments: 8, longitudeSegments: 12)
+        .moved(.zero, scale: [1, 0.55, 1.3])
+
+    var asset = ModelAssetDefinition(
+        name: "Mokorin",
+        materials: [
+            material("fluff", [1, 1, 1], roughness: 0.9, vertexColor: true),
+            material("leaf", [0.3, 0.7, 0.25], doubleSided: true),
+            material("white", [0.98, 0.98, 0.96], roughness: 0.3),
+            material("ink", [0.08, 0.06, 0.1], roughness: 0.2),
+            material("blush", [1.0, 0.55, 0.55]),
+            material("feet", [0.85, 0.6, 0.2]),
+        ],
+        parts: [
+            part("body", body, "fluff", at: [0, 0.38, 0]),
+            part("leafL", leaf, "leaf", at: [0.1, 0.28, 0], rotation: .z(-0.5), parent: "body"),
+            part("leafR", leaf, "leaf", at: [-0.1, 0.28, 0], rotation: .z(0.5), parent: "body"),
+            part("eyes", eyes, "white", parent: "body"),
+            part("pupils", pupils, "ink", parent: "body"),
+            part("cheeks", cheeks, "blush", parent: "body"),
+            part("footL", foot, "feet", at: [0.15, 0.045, 0.06]),
+            part("footR", foot, "feet", at: [-0.15, 0.045, 0.06]),
+        ])
+    asset.clips = [
+        try bakeClip("idle", asset: asset, duration: 1.2, loop: true) { t in
+            let s = sin(t / 1.2 * 2 * .pi)
+            return [
+                "body": offset("body", in: asset, translation: [0, abs(s) * 0.06, 0],
+                               scale: [1 + 0.04 * (1 - abs(s)), 1 - 0.05 * (1 - abs(s)), 1 + 0.04 * (1 - abs(s))]),
+                "leafL": offset("leafL", in: asset, rotation: .z(-s * 0.25)),
+                "leafR": offset("leafR", in: asset, rotation: .z(s * 0.25)),
+            ]
+        },
+        try bakeClip("attack", asset: asset, duration: 0.6, loop: false) { t in
+            let k = sin(min(t / 0.6, 1) * .pi)
+            return [
+                "body": offset("body", in: asset, rotation: .x(k * 0.4), translation: [0, k * 0.25, k * 0.7])
+            ]
+        },
+        try bakeClip("hurt", asset: asset, duration: 0.5, loop: false) { t in
+            let k = sin(min(t / 0.5, 1) * .pi)
+            return [
+                "body": offset("body", in: asset, rotation: .x(-k * 0.35) * .z(sin(t * 40) * 0.15 * k),
+                               translation: [0, 0, -k * 0.15], scale: [1 + k * 0.1, 1 - k * 0.12, 1])
+            ]
+        },
+    ]
+    return try asset.validated()
+}
+
+/// Kinokoro: a grumpy walking mushroom.
+func makeKinokoro() throws -> ModelAssetDefinition {
+    let stem = try MeshBuilder.revolve(
+        profile: [[0, 0], [0.16, 0], [0.2, 0.12], [0.18, 0.34], [0.14, 0.42], [0, 0.42]], segments: 24)
+        .recalculatingNormals(smoothingAngle: .pi / 2)
+    let cap = try MeshBuilder.revolve(
+        profile: [[0, -0.02], [0.4, -0.02], [0.46, 0.04], [0.42, 0.14], [0.3, 0.26], [0.14, 0.32], [0, 0.34]],
+        segments: 32)
+        .recalculatingNormals(smoothingAngle: .pi / 2)
+    var spots: [MeshData] = []
+    let spot = try MeshBuilder.sphere(radius: 0.06, latitudeSegments: 6, longitudeSegments: 10)
+    for i in 0..<7 {
+        let a = Float(i) / 7 * 2 * .pi + 0.3
+        let ring: Float = i % 2 == 0 ? 0.42 : 0.27
+        let h: Float = i % 2 == 0 ? 0.13 : 0.255
+        let tilt: Float = i % 2 == 0 ? 0.9 : 0.55
+        spots.append(spot.moved(
+            [sin(a) * ring, h, cos(a) * ring],
+            rotation: simd_quatf(angle: tilt, axis: [cos(a), 0, -sin(a)]), scale: [1, 0.35, 1]))
+    }
+    spots.append(spot.moved([0, 0.335, 0], scale: [1.2, 0.3, 1.2]))
+    let eye = try MeshBuilder.sphere(radius: 0.035, latitudeSegments: 8, longitudeSegments: 10)
+    let face = try merge([
+        eye.moved([-0.07, 0.27, 0.17], scale: [1, 1.4, 0.6]),
+        eye.moved([0.07, 0.27, 0.17], scale: [1, 1.4, 0.6]),
+        MeshBuilder.box(size: [0.08, 0.018, 0.02]).moved([-0.075, 0.33, 0.17], rotation: .z(-0.4)),
+        MeshBuilder.box(size: [0.08, 0.018, 0.02]).moved([0.075, 0.33, 0.17], rotation: .z(0.4)),
+        MeshBuilder.box(size: [0.07, 0.015, 0.02]).moved([0, 0.19, 0.19]),
+    ])
+    let leg = try MeshBuilder.cylinder(radius: 0.055, height: 0.12, segments: 10).moved([0, -0.06, 0])
+    let arm = try MeshBuilder.cylinder(radius: 0.035, height: 0.16, segments: 8).moved([0, -0.08, 0])
+
+    var asset = ModelAssetDefinition(
+        name: "Kinokoro",
+        materials: [
+            material("stem", [0.96, 0.9, 0.78], roughness: 0.8),
+            material("cap", [0.62, 0.22, 0.6], roughness: 0.45),
+            material("spots", [0.98, 0.96, 0.85]),
+            material("ink", [0.08, 0.05, 0.08], roughness: 0.3),
+        ],
+        parts: [
+            part("stem", stem, "stem", at: [0, 0.1, 0]),
+            part("cap", cap, "cap", at: [0, 0.4, 0], parent: "stem"),
+            part("spots", try merge(spots), "spots", parent: "cap"),
+            part("face", face, "ink", parent: "stem"),
+            part("armL", arm, "stem", at: [0.17, 0.24, 0], rotation: .z(0.7), parent: "stem"),
+            part("armR", arm, "stem", at: [-0.17, 0.24, 0], rotation: .z(-0.7), parent: "stem"),
+            part("legL", leg, "stem", at: [0.08, 0.12, 0]),
+            part("legR", leg, "stem", at: [-0.08, 0.12, 0]),
+        ])
+    asset.clips = [
+        try bakeClip("idle", asset: asset, duration: 0.9, loop: true) { t in
+            let s = sin(t / 0.9 * 2 * .pi)
+            return [
+                "stem": offset("stem", in: asset, rotation: .z(s * 0.08), translation: [0, abs(s) * 0.04, 0]),
+                "cap": offset("cap", in: asset, rotation: .z(-s * 0.1)),
+                "legL": offset("legL", in: asset, translation: [0, max(s, 0) * 0.05, 0]),
+                "legR": offset("legR", in: asset, translation: [0, max(-s, 0) * 0.05, 0]),
+                "armL": offset("armL", in: asset, rotation: .x(s * 0.4)),
+                "armR": offset("armR", in: asset, rotation: .x(-s * 0.4)),
+            ]
+        },
+        try bakeClip("attack", asset: asset, duration: 0.6, loop: false) { t in
+            let k = sin(min(t / 0.6, 1) * .pi)
+            return [
+                "stem": offset("stem", in: asset, rotation: .x(k * 0.6), translation: [0, k * 0.1, k * 0.55]),
+                "armL": offset("armL", in: asset, rotation: .x(-k * 1.6)),
+                "armR": offset("armR", in: asset, rotation: .x(-k * 1.6)),
+            ]
+        },
+        try bakeClip("hurt", asset: asset, duration: 0.5, loop: false) { t in
+            let k = sin(min(t / 0.5, 1) * .pi)
+            return [
+                "stem": offset("stem", in: asset, rotation: .x(-k * 0.3) * .z(sin(t * 40) * 0.12 * k),
+                               translation: [0, 0, -k * 0.15]),
+                "cap": offset("cap", in: asset, translation: [0, k * 0.08, 0]),
+            ]
+        },
+    ]
+    return try asset.validated()
+}
+
+/// Yoroigani: an armored crab with a spiked shell and heavy claws.
+func makeYoroigani() throws -> ModelAssetDefinition {
+    let shell = try MeshBuilder.sphere(radius: 0.4, latitudeSegments: 16, longitudeSegments: 28)
+        .moved(.zero, scale: [1.25, 0.55, 1])
+        .noiseDisplaced(amplitude: 0.02, frequency: 5, seed: 11)
+        .recalculatingNormals(smoothingAngle: .pi / 3)
+    var spikes: [MeshData] = []
+    let spike = try MeshBuilder.cone(radius: 0.05, height: 0.14, segments: 6)
+    for i in 0..<8 {
+        let a = Float(i) / 8 * 2 * .pi
+        spikes.append(spike.moved(
+            [sin(a) * 0.32, 0.16, cos(a) * 0.24],
+            rotation: simd_quatf(angle: 0.6, axis: [cos(a), 0, -sin(a)])))
+    }
+    spikes.append(spike.moved([0, 0.24, 0], scale: [1.4, 1.3, 1.4]))
+    let stalk = try MeshBuilder.cylinder(radius: 0.022, height: 0.16, segments: 8)
+    let stalks = merge2(
+        stalk.moved([-0.1, 0.24, 0.28], rotation: .z(0.2)),
+        stalk.moved([0.1, 0.24, 0.28], rotation: .z(-0.2)))
+    let ball = try MeshBuilder.sphere(radius: 0.045, latitudeSegments: 8, longitudeSegments: 12)
+    let eyeballs = merge2(ball.moved([-0.12, 0.33, 0.29]), ball.moved([0.12, 0.33, 0.29]))
+
+    func claw(_ side: Float) throws -> MeshData {
+        try merge([
+            MeshBuilder.cylinder(radius: 0.05, height: 0.3, segments: 10)
+                .moved([side * 0.1, 0, 0.08], rotation: simd_quatf(angle: side * -1.1, axis: [0.3, 0, 1])),
+            MeshBuilder.sphere(radius: 0.15, latitudeSegments: 10, longitudeSegments: 16)
+                .moved([side * 0.2, 0.02, 0.25], scale: [0.9, 0.75, 1.3]),
+        ])
+    }
+    let pincer = try MeshBuilder.cone(radius: 0.06, height: 0.24, segments: 8)
+        .moved([0, 0, 0.12], rotation: .x(.pi / 2), scale: [1, 1, 0.6])
+    var legs: [MeshData] = []
+    let legSegment = try MeshBuilder.cylinder(radius: 0.03, height: 0.34, segments: 8)
+    for side: Float in [-1, 1] {
+        for i in 0..<3 {
+            let z = Float(i - 1) * 0.16 - 0.05
+            legs.append(legSegment.moved([side * 0.48, 0.18, z], rotation: .z(side * 1.0)))
+            legs.append(legSegment.moved([side * 0.62, 0.06, z], rotation: .z(side * 0.25)))
+        }
+    }
+
+    var asset = ModelAssetDefinition(
+        name: "Yoroigani",
+        materials: [
+            material("shell", [0.78, 0.26, 0.12], roughness: 0.35, metallic: 0.2),
+            material("spike", [0.95, 0.85, 0.6], roughness: 0.4),
+            material("dark", [0.45, 0.13, 0.08], roughness: 0.5),
+            material("ink", [0.05, 0.05, 0.06], roughness: 0.15),
+        ],
+        parts: [
+            part("shell", shell, "shell", at: [0, 0.36, 0]),
+            part("spikes", try merge(spikes), "spike", parent: "shell"),
+            part("stalks", stalks, "dark", parent: "shell"),
+            part("eyeballs", eyeballs, "ink", parent: "shell"),
+            part("clawL", try claw(1), "shell", at: [0.38, -0.05, 0.12], parent: "shell"),
+            part("pincerL", pincer, "spike", at: [0.2, 0.08, 0.32], parent: "clawL"),
+            part("clawR", try claw(-1), "shell", at: [-0.38, -0.05, 0.12], parent: "shell"),
+            part("pincerR", pincer, "spike", at: [-0.2, 0.08, 0.32], parent: "clawR"),
+            part("legs", try merge(legs), "dark"),
+        ])
+    asset.clips = [
+        try bakeClip("idle", asset: asset, duration: 1.4, loop: true) { t in
+            let s = sin(t / 1.4 * 2 * .pi)
+            let snap = max(sin(t / 1.4 * 4 * .pi), 0)
+            return [
+                "shell": offset("shell", in: asset, rotation: .z(s * 0.05), translation: [s * 0.04, 0, 0]),
+                "pincerL": offset("pincerL", in: asset, rotation: .x(-snap * 0.5)),
+                "pincerR": offset("pincerR", in: asset, rotation: .x(-snap * 0.5)),
+                "clawL": offset("clawL", in: asset, rotation: .y(s * 0.1)),
+                "clawR": offset("clawR", in: asset, rotation: .y(s * 0.1)),
+            ]
+        },
+        try bakeClip("attack", asset: asset, duration: 0.7, loop: false) { t in
+            let k = sin(min(t / 0.7, 1) * .pi)
+            return [
+                "shell": offset("shell", in: asset, rotation: .x(k * 0.25), translation: [0, k * 0.05, k * 0.35]),
+                "clawR": offset("clawR", in: asset, rotation: .x(-k * 0.6), translation: [0, k * 0.15, k * 0.35]),
+                "pincerR": offset("pincerR", in: asset, rotation: .x(-k * 0.8)),
+            ]
+        },
+        try bakeClip("hurt", asset: asset, duration: 0.5, loop: false) { t in
+            let k = sin(min(t / 0.5, 1) * .pi)
+            return [
+                "shell": offset("shell", in: asset, rotation: .z(sin(t * 45) * 0.1 * k),
+                                translation: [0, k * 0.05, -k * 0.12])
+            ]
+        },
+    ]
+    return try asset.validated()
+}
+
+/// Varg: the black dragon waiting in the northern lair. About 2.6 m tall.
+func makeDragon() throws -> ModelAssetDefinition {
+    let body = try MeshBuilder.sphere(radius: 0.6, latitudeSegments: 18, longitudeSegments: 30)
+        .moved(.zero, scale: [0.95, 0.85, 1.35])
+        .coloring { v in
+            // lighter belly plates underneath and toward the front
+            let belly = min(max(-v.position.y / 0.45 + v.position.z * 0.3, 0), 1)
+            return RGBAColor(sRGB: [0.2, 0.14, 0.28]).interpolated(
+                to: RGBAColor(sRGB: [0.72, 0.5, 0.28]), fraction: belly * belly)
+        }
+    let circle = try Profile2D.circle(radius: 1, segments: 14)
+    let neckPath: [SIMD3<Float>] = [[0, 0.1, 0.55], [0, 0.45, 0.85], [0, 0.85, 0.95], [0, 1.1, 0.88]]
+    let neck = try MeshBuilder.sweep(circle, along: neckPath, scales: [0.27, 0.2, 0.16, 0.15])
+    let tailPath: [SIMD3<Float>] = (0...8).map { i in
+        let t = Float(i) / 8
+        return [sin(t * 2.4) * 0.45, -0.15 - t * 0.9 + t * t * 0.6, -0.65 - t * 1.6]
+    }
+    let tail = try MeshBuilder.sweep(
+        circle, along: tailPath, scales: (0...8).map { 0.3 * (1 - Float($0) / 9) + 0.03 })
+    let skull = try merge([
+        MeshBuilder.sphere(radius: 0.24, latitudeSegments: 12, longitudeSegments: 20)
+            .moved([0, 0.04, 0], scale: [1, 0.8, 1.1]),
+        MeshBuilder.sphere(radius: 0.16, latitudeSegments: 10, longitudeSegments: 16).moved([0, 0.0, 0.28], scale: [0.85, 0.6, 1.7]),
+        MeshBuilder.sphere(radius: 0.14, latitudeSegments: 8, longitudeSegments: 14)
+            .moved([0, 0.0, 0.47], scale: [1, 0.55, 0.6]),
+    ])
+    let jaw = try MeshBuilder.sphere(radius: 0.13, latitudeSegments: 8, longitudeSegments: 14).moved([0, -0.02, 0.22], scale: [0.8, 0.35, 1.7])
+    let horn = try MeshBuilder.cone(radius: 0.06, height: 0.42, segments: 8)
+    let horns = try merge([
+        horn.moved([0.14, 0.24, -0.15], rotation: .x(-1.0) * .z(-0.35)),
+        horn.moved([-0.14, 0.24, -0.15], rotation: .x(-1.0) * .z(0.35)),
+        MeshBuilder.cone(radius: 0.03, height: 0.12, segments: 6).moved([0.08, 0.1, 0.5], rotation: .x(-0.4)),
+        MeshBuilder.cone(radius: 0.03, height: 0.12, segments: 6).moved([-0.08, 0.1, 0.5], rotation: .x(-0.4)),
+    ])
+    let eye = try MeshBuilder.sphere(radius: 0.045, latitudeSegments: 6, longitudeSegments: 10)
+    let eyes = merge2(
+        eye.moved([0.13, 0.1, 0.2], scale: [0.6, 0.7, 1.2]),
+        eye.moved([-0.13, 0.1, 0.2], scale: [0.6, 0.7, 1.2]))
+    var backSpines: [MeshData] = []
+    let spine = try MeshBuilder.cone(radius: 0.07, height: 0.22, segments: 6)
+    for i in 0..<6 {
+        let z = 0.55 - Float(i) * 0.22
+        backSpines.append(spine.moved([0, 0.5 - abs(z) * 0.18, z], rotation: .x(-0.35), scale: [0.5, 1, 1]))
+    }
+    for i in 1..<7 {
+        let p = tailPath[i]
+        backSpines.append(spine.moved(p + [0, 0.26 * (1 - Float(i) / 9), 0], rotation: .x(-0.6),
+                                      scale: [0.4, 1 - Float(i) * 0.1, 0.8]))
+    }
+
+    func wing(_ side: Float) throws -> (membrane: MeshData, bone: MeshData) {
+        let lead: (Float) -> SIMD3<Float> = { u in
+            [side * u * 1.7, 0.15 + sin(u * .pi * 0.85) * 0.7, -0.15 * u]
+        }
+        let membrane = try MeshBuilder.surface(uSegments: 16, vSegments: 6) { uv in
+            let u = side > 0 ? uv.x : 1 - uv.x  // keep winding consistent on both sides
+            let top = lead(u)
+            let depth = 1.15 * (1 - u) + 0.2 + 0.18 * abs(sin(u * .pi * 3))
+            return top + [0, -uv.y * depth, -uv.y * 0.35]
+        }
+        let bone = try MeshBuilder.sweep(
+            Profile2D.circle(radius: 1, segments: 8), along: (0...10).map { lead(Float($0) / 10) },
+            scales: (0...10).map { 0.07 - Float($0) * 0.005 })
+        return (membrane, bone)
+    }
+    let wingL = try wing(1), wingR = try wing(-1)
+
+    func leg(front: Bool) throws -> MeshData {
+        let thigh: Float = front ? 0.13 : 0.2
+        return try merge([
+            MeshBuilder.sphere(radius: thigh, latitudeSegments: 10, longitudeSegments: 16)
+                .moved([0, -0.1, 0], scale: [1, 1.5, 1.1]),
+            MeshBuilder.cylinder(radius: thigh * 0.55, height: 0.6, segments: 12).moved([0, -0.45, 0.04]),
+            MeshBuilder.box(size: [thigh * 1.3, 0.1, 0.32]).moved([0, -0.75, 0.12]),
+        ])
+    }
+    let claws = try MeshBuilder.cone(radius: 0.03, height: 0.1, segments: 5)
+    func clawSet(front: Bool) -> MeshData {
+        let w: Float = front ? 0.13 : 0.2
+        return merge3(
+            claws.moved([-w * 0.45, -0.77, 0.3], rotation: .x(1.4)),
+            claws.moved([0, -0.77, 0.31], rotation: .x(1.4)),
+            claws.moved([w * 0.45, -0.77, 0.3], rotation: .x(1.4)))
+    }
+
+    var asset = ModelAssetDefinition(
+        name: "Varg",
+        materials: [
+            material("scale", [1, 1, 1], roughness: 0.4, metallic: 0.3, vertexColor: true),
+            material("hide", [0.2, 0.14, 0.28], roughness: 0.4, metallic: 0.3),
+            material("bone", [0.88, 0.82, 0.68], roughness: 0.5),
+            material("wing", [0.42, 0.08, 0.14], roughness: 0.7, doubleSided: true),
+            material("glow", [1.0, 0.82, 0.15], glow: 6),
+        ],
+        parts: [
+            part("body", body, "scale", at: [0, 1.25, 0]),
+            part("spines", try merge(backSpines), "bone", parent: "body"),
+            part("tail", tail, "hide", parent: "body"),
+            part("neck", neck, "hide", parent: "body"),
+            part("head", skull, "hide", at: [0, 1.2, 0.9], scale: [1.25, 1.25, 1.25], parent: "body"),
+            part("jaw", jaw, "hide", at: [0, -0.07, 0.08], parent: "head"),
+            part("horns", horns, "bone", parent: "head"),
+            part("eyes", eyes, "glow", parent: "head"),
+            part("wingL", wingL.membrane, "wing", at: [0.32, 0.3, 0.15], parent: "body"),
+            part("wingBoneL", wingL.bone, "hide", parent: "wingL"),
+            part("wingR", wingR.membrane, "wing", at: [-0.32, 0.3, 0.15], parent: "body"),
+            part("wingBoneR", wingR.bone, "hide", parent: "wingR"),
+            part("legFL", try leg(front: true), "hide", at: [0.32, -0.15, 0.5], parent: "body"),
+            part("clawFL", clawSet(front: true), "bone", parent: "legFL"),
+            part("legFR", try leg(front: true), "hide", at: [-0.32, -0.15, 0.5], parent: "body"),
+            part("clawFR", clawSet(front: true), "bone", parent: "legFR"),
+            part("legBL", try leg(front: false), "hide", at: [0.36, -0.15, -0.45], parent: "body"),
+            part("clawBL", clawSet(front: false), "bone", parent: "legBL"),
+            part("legBR", try leg(front: false), "hide", at: [-0.36, -0.15, -0.45], parent: "body"),
+            part("clawBR", clawSet(front: false), "bone", parent: "legBR"),
+        ])
+    // Legs hang 0.15 + 0.8 below the body origin; place the body so the feet touch y = 0.
+    asset.parts[0].transform.translation.y = 0.95
+
+    asset.clips = [
+        try bakeClip("idle", asset: asset, duration: 2.4, loop: true) { t in
+            let s = sin(t / 2.4 * 2 * .pi)
+            let flap = sin(t / 2.4 * 4 * .pi)
+            return [
+                "body": offset("body", in: asset, translation: [0, s * 0.03, 0]),
+                "head": offset("head", in: asset, rotation: .x(s * 0.08) * .y(sin(t / 2.4 * 2 * .pi + 1) * 0.12)),
+                "jaw": offset("jaw", in: asset, rotation: .x(max(s, 0) * 0.15)),
+                "wingL": offset("wingL", in: asset, rotation: .z(flap * 0.18)),
+                "wingR": offset("wingR", in: asset, rotation: .z(-flap * 0.18)),
+                "tail": offset("tail", in: asset, rotation: .y(s * 0.12)),
+            ]
+        },
+        try bakeClip("attack", asset: asset, duration: 0.8, loop: false) { t in
+            let k = sin(min(t / 0.8, 1) * .pi)
+            return [
+                "body": offset("body", in: asset, rotation: .x(k * 0.15), translation: [0, 0, k * 0.4]),
+                "head": offset("head", in: asset, rotation: .x(k * 0.5), translation: [0, -k * 0.3, k * 0.5]),
+                "jaw": offset("jaw", in: asset, rotation: .x(k * 0.6)),
+                "wingL": offset("wingL", in: asset, rotation: .z(k * 0.5)),
+                "wingR": offset("wingR", in: asset, rotation: .z(-k * 0.5)),
+                "legFL": offset("legFL", in: asset, rotation: .x(-k * 0.8), translation: [0, k * 0.2, 0]),
+            ]
+        },
+        try bakeClip("breath", asset: asset, duration: 1.4, loop: false) { t in
+            // rear back (0 - 0.5 s), then thrust the open jaw forward
+            let rear = sin(min(t / 0.5, 1) * .pi / 2) * (t < 0.5 ? 1 : max(0, 1 - (t - 0.5) / 0.25))
+            let thrust = t < 0.5 ? 0 : sin(min((t - 0.5) / 0.9, 1) * .pi)
+            return [
+                "body": offset("body", in: asset, rotation: .x(-rear * 0.2 + thrust * 0.12)),
+                "head": offset("head", in: asset, rotation: .x(-rear * 0.7 + thrust * 0.45),
+                               translation: [0, rear * 0.15, thrust * 0.35]),
+                "jaw": offset("jaw", in: asset, rotation: .x(rear * 0.2 + thrust * 0.75)),
+                "wingL": offset("wingL", in: asset, rotation: .z(rear * 0.6 - thrust * 0.2)),
+                "wingR": offset("wingR", in: asset, rotation: .z(-rear * 0.6 + thrust * 0.2)),
+            ]
+        },
+        try bakeClip("hurt", asset: asset, duration: 0.6, loop: false) { t in
+            let k = sin(min(t / 0.6, 1) * .pi)
+            return [
+                "body": offset("body", in: asset, rotation: .x(-k * 0.12), translation: [0, 0, -k * 0.2]),
+                "head": offset("head", in: asset, rotation: .x(-k * 0.5) * .z(sin(t * 30) * 0.15 * k)),
+                "jaw": offset("jaw", in: asset, rotation: .x(k * 0.5)),
+            ]
+        },
+    ]
+    return try asset.validated()
+}
+
+func merge2(_ a: MeshData, _ b: MeshData) -> MeshData { try! merge([a, b]) }
+func merge3(_ a: MeshData, _ b: MeshData, _ c: MeshData) -> MeshData { try! merge([a, b, c]) }
+
+#Preview("Mokorin") { ModelAssetPreview(asset: try! makeMokorin()) }
+#Preview("Kinokoro") { ModelAssetPreview(asset: try! makeKinokoro()) }
+#Preview("Yoroigani") { ModelAssetPreview(asset: try! makeYoroigani()) }
+#Preview("Varg") { ModelAssetPreview(asset: try! makeDragon()) }

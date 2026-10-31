@@ -1,0 +1,37 @@
+name: RealitizerQuest
+options:
+  bundleIdPrefix: com.akidon0000
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+packages:
+  Realitizer:
+    url: https://github.com/koher/realitizer
+    revision: 3c89cef0a0c0560a10786092cf49436eb62bf6ad
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: ""
+targets:
+  RealitizerQuest:
+    type: application
+    platform: iOS
+    sources:
+      - RealitizerQuest
+    dependencies:
+      - package: Realitizer
+        product: Realitizer
+      - package: Realitizer
+        product: RealitizerRealityKit
+      - package: Realitizer
+        product: RealitizerPreview
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.akidon0000.RealitizerQuest
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: リアリタイザークエスト
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UIStatusBarHidden: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
