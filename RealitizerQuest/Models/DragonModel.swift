@@ -57,6 +57,7 @@ func makeDragon() throws -> ModelAssetDefinition {
     let hide = try merge([torso, neck, tailMesh])
         .recalculatingNormals(smoothingAngle: .pi / 3)
         .coloring(scaleColor)
+        .scaleSurface()
 
     let bones: [(String, String)] = [
         ("hips", "chest"), ("chest", "neck1"), ("neck1", "neck2"), ("neck2", "head"),
@@ -133,19 +134,43 @@ func makeDragon() throws -> ModelAssetDefinition {
     ]
     let skull = try MeshBuilder.loft(skullSections.map {
         LoftSection(profile: ellipse($0.rx, $0.ry), transform: move([0, $0.cy, $0.z]))
-    }).recalculatingNormals(smoothingAngle: .pi / 3).coloring(scaleColor)
-    let browRidge = try MeshBuilder.sphere(radius: 0.06, latitudeSegments: 8, longitudeSegments: 12)
-    let brows = try merge2(
-        browRidge.moved([0.12, 0.17, 0.11], rotation: .z(-0.35), scale: [1.4, 0.45, 1.1]),
-        browRidge.moved([-0.12, 0.17, 0.11], rotation: .z(0.35), scale: [1.4, 0.45, 1.1])
-    ).coloring(scaleColor)
+    }).recalculatingNormals(smoothingAngle: .pi / 3).coloring(scaleColor).scaleSurface()
+    // Brow ridges, cheekbones and a ridge along the top of the snout break up the smooth loft.
+    let lump = try MeshBuilder.sphere(radius: 0.06, latitudeSegments: 10, longitudeSegments: 14)
+    let face = try merge([
+        lump.moved([0.12, 0.17, 0.11], rotation: .z(-0.35), scale: [1.4, 0.45, 1.1]),
+        lump.moved([-0.12, 0.17, 0.11], rotation: .z(0.35), scale: [1.4, 0.45, 1.1]),
+        lump.moved([0.155, 0.015, 0.03], rotation: .y(0.25), scale: [1, 0.85, 1.6]),
+        lump.moved([-0.155, 0.015, 0.03], rotation: .y(-0.25), scale: [1, 0.85, 1.6]),
+        lump.moved([0, 0.093, 0.36], scale: [0.6, 0.42, 3.1]),
+    ]).recalculatingNormals(smoothingAngle: .pi / 2).coloring(scaleColor).scaleSurface()
 
     let jawSections: [(z: Float, rx: Float, ry: Float, cy: Float)] = [
         (0, 0.15, 0.07, -0.02), (0.25, 0.12, 0.05, -0.03), (0.45, 0.095, 0.04, -0.03), (0.62, 0.06, 0.028, -0.025),
     ]
-    let jaw = try MeshBuilder.loft(jawSections.map {
+    let jawBone = try MeshBuilder.loft(jawSections.map {
         LoftSection(profile: ellipse($0.rx, $0.ry), transform: move([0, $0.cy, $0.z]))
-    }).recalculatingNormals(smoothingAngle: .pi / 3).coloring { _ in RGBAColor(sRGB: [0.5, 0.12, 0.08]) }
+    })
+    let jawMuscle = try MeshBuilder.sphere(radius: 0.06, latitudeSegments: 10, longitudeSegments: 14)
+    let jaw = try merge([
+        jawBone,
+        jawMuscle.moved([0.11, -0.01, 0.07], scale: [0.7, 0.85, 1.4]),
+        jawMuscle.moved([-0.11, -0.01, 0.07], scale: [0.7, 0.85, 1.4]),
+    ]).recalculatingNormals(smoothingAngle: .pi / 3).coloring(scaleColor).scaleSurface()
+    // Short backward spikes along the jawline.
+    var frills: [MeshData] = []
+    let frill = try MeshBuilder.cone(radius: 0.022, height: 0.11, segments: 6)
+        .coloring { v in
+            RGBAColor(sRGB: [0.3, 0.05, 0.04]).interpolated(
+                to: RGBAColor(sRGB: [0.95, 0.8, 0.5]), fraction: simd_clamp(v.position.y / 0.11 + 0.5, 0, 1))
+        }
+    for side: Float in [-1, 1] {
+        for i in 0..<3 {
+            let k = Float(i)
+            frills.append(frill.moved([side * (0.15 - k * 0.012), -0.04 - k * 0.012, 0.03 + k * 0.07],
+                                      rotation: .y(side * 0.35) * .x(-.pi / 2 - 0.35), scale: .one * (1 - k * 0.22)))
+        }
+    }
     let hinge = SIMD3<Float>(0, -0.05, -0.05)
 
     let fang = try MeshBuilder.cone(radius: 0.017, height: 0.06, segments: 5)
@@ -214,7 +239,9 @@ func makeDragon() throws -> ModelAssetDefinition {
         let membraneColor: (SIMD3<Float>, Float) -> (MeshVertex) -> RGBAColor = { origin, reach in
             { v in
                 let t = min(simd_distance(v.position, origin) / reach, 1)
-                return RGBAColor(sRGB: [0.32, 0.04, 0.05]).interpolated(to: RGBAColor(sRGB: [0.85, 0.28, 0.08]), fraction: t)
+                // Thick and dark near the bones, thin and glowing-translucent toward the edge.
+                return RGBAColor(sRGB: [0.32, 0.04, 0.05], alpha: 0.98).interpolated(
+                    to: RGBAColor(sRGB: [0.9, 0.32, 0.1], alpha: 0.7), fraction: t)
             }
         }
         // Finger panels fan out from the wrist with a scalloped trailing edge.
@@ -266,13 +293,24 @@ func makeDragon() throws -> ModelAssetDefinition {
         let knee = SIMD3<Float>(0, -0.42 * (hind ? 1 : 1.05), hind ? 0.2 : -0.08)
         let ankle = SIMD3<Float>(0, hind ? -0.72 : -0.8, hind ? -0.12 : 0.06)
         let foot = SIMD3<Float>(0, -0.93, hind ? 0.02 : 0.12)
-        let limb = Bezier([0, -0.2, hind ? 0.1 : 0], knee, knee, ankle)
+        // One continuous limb: a heavy thigh that narrows through the knee to a lean shin and ankle.
+        let hip = SIMD3<Float>(0, 0.08, 0)
+        let thigh = SIMD3<Float>(0, -0.2, hind ? 0.14 : 0.02)
+        let path = catmullRom([hip, thigh, knee, ankle, foot], samples: 28)
+        let radii: [(t: Float, r: Float)] = hind
+            ? [(0, 0.2), (0.12, 0.25), (0.3, 0.19), (0.45, 0.11), (0.62, 0.085), (0.8, 0.07), (1, 0.06)]
+            : [(0, 0.15), (0.12, 0.17), (0.3, 0.12), (0.45, 0.085), (0.65, 0.07), (0.85, 0.06), (1, 0.055)]
         var parts = [
-            try MeshBuilder.sphere(radius: 0.24 * r, latitudeSegments: 12, longitudeSegments: 16)
-                .moved([0, -0.12, 0.02], scale: [0.85, 1.35, 1.15]),
-            try MeshBuilder.sweep(circle, along: (0...8).map { limb.point(Float($0) / 8) },
-                                  scales: (0...8).map { (0.13 - Float($0) / 8 * 0.05) * r }),
-            try MeshBuilder.sweep(circle, along: [ankle, (ankle + foot) / 2, foot], scales: [0.075 * r, 0.068 * r, 0.06 * r]),
+            try MeshBuilder.sweep(circle, along: path, scales: path.indices.map { i in
+                let t = Float(i) / Float(path.count - 1)
+                let upper = radii.firstIndex { $0.t >= t } ?? radii.count - 1
+                let a = radii[max(upper - 1, 0)], b = radii[upper]
+                let k = b.t > a.t ? (t - a.t) / (b.t - a.t) : 0
+                return (a.r + (b.r - a.r) * (k * k * (3 - 2 * k))) * r
+            }),
+            // Knee cap and heel give the joints some structure.
+            try MeshBuilder.sphere(radius: 0.08 * r, latitudeSegments: 8, longitudeSegments: 12)
+                .moved(knee + [0, 0, hind ? 0.04 : -0.03], scale: [0.9, 1, 0.8]),
         ]
         var claws: [MeshData] = []
         for a: Float in [-0.45, 0, 0.45] {
@@ -282,7 +320,8 @@ func makeDragon() throws -> ModelAssetDefinition {
             claws.append(try MeshBuilder.cone(radius: 0.025 * r, height: 0.1 * r, segments: 6)
                 .moved(toe + [sin(a) * 0.08, -0.01, cos(a) * 0.08], rotation: .y(a) * .x(.pi / 2 + 0.35)))
         }
-        return (try merge(parts).recalculatingNormals(smoothingAngle: .pi / 3).coloring(scaleColor), try merge(claws))
+        return (try merge(parts).recalculatingNormals(smoothingAngle: .pi / 3).coloring(scaleColor).scaleSurface(),
+                try merge(claws))
     }
     let hindLeg = try leg(hind: true), foreLeg = try leg(hind: false)
 
@@ -292,7 +331,7 @@ func makeDragon() throws -> ModelAssetDefinition {
     var parts: [ModelPartDefinition] = [
         ModelPartDefinition(id: rid("hide"), geometry: skin, material: rid("scale")),
         jointPart("skull", skull, "scale", joint: "head"),
-        jointPart("brows", brows, "scale", joint: "head"),
+        jointPart("face", face, "scale", joint: "head"),
         jointPart("horns", try merge(horns), "horn", joint: "head"),
         jointPart("eyes", eyes, "eye", joint: "head"),
         jointPart("pupils", pupils, "ink", joint: "head"),
@@ -301,6 +340,7 @@ func makeDragon() throws -> ModelAssetDefinition {
         jointPart("upperTeeth", try merge(upperTeeth), "bone", joint: "head"),
         part("jaw", jaw, "scale", at: hinge, parent: "skull"),
         part("lowerTeeth", try merge(lowerTeeth), "bone", parent: "jaw"),
+        part("frills", try merge(frills), "horn", parent: "jaw"),
         jointPart("spade", spade, "horn", joint: "tail4"),
         jointPart("wingL", wingL.arm, "hide", at: local(shoulderL, "chest"), joint: "chest"),
         part("wingInnerL", wingL.inner, "membrane", parent: "wingL"),
@@ -326,12 +366,19 @@ func makeDragon() throws -> ModelAssetDefinition {
         parts.append(jointPart("spines-" + joint, try merge(meshes), "horn", joint: joint))
     }
 
+    var scaleMaterial = material("scale", [1, 1, 1], roughness: 0.5, metallic: 0.1, vertexColor: true)
+    scaleMaterial.normalTexture = try scaleNormalMap
+    scaleMaterial.roughnessTexture = try scaleRoughnessMap
+    var membraneMaterial = material("membrane", [1, 1, 1], roughness: 0.75, vertexColor: true, doubleSided: true)
+    membraneMaterial.alphaMode = .blend
+    membraneMaterial.baseColorTexture = try membraneVeins
+
     var asset = ModelAssetDefinition(
         name: "Varg",
         materials: [
-            material("scale", [1, 1, 1], roughness: 0.45, metallic: 0.15, vertexColor: true),
+            scaleMaterial,
             material("hide", [0.3, 0.06, 0.06], roughness: 0.5, metallic: 0.1),
-            material("membrane", [1, 1, 1], roughness: 0.8, vertexColor: true, doubleSided: true),
+            membraneMaterial,
             material("horn", [1, 1, 1], roughness: 0.35, vertexColor: true),
             material("bone", [0.95, 0.9, 0.78], roughness: 0.4),
             material("eye", [1.0, 0.65, 0.1], glow: 5),
@@ -415,6 +462,78 @@ func makeDragon() throws -> ModelAssetDefinition {
 }
 
 // MARK: - Helpers
+
+/// Overlapping scales laid out in staggered rows of UV space. 1 at a scale's raised tip, 0 in the gaps.
+private func scaleRelief(_ uv: SIMD2<Float>, cells: Float) -> Float {
+    let p = uv * cells
+    var height: Float = 0
+    for dy in -1...1 {
+        let row = floor(p.y) + Float(dy)
+        let shift: Float = Int(row) & 1 == 0 ? 0 : 0.5
+        for dx in -1...1 {
+            let center = SIMD2<Float>(floor(p.x - shift) + Float(dx) + shift + 0.5, row + 0.5)
+            let d = p - center
+            let dist = simd_length(SIMD2(d.x, d.y * 1.3))
+            guard dist < 0.68 else { continue }
+            let dome = 1 - dist / 0.68
+            // Each scale rises toward its trailing edge, so rows overlap like shingles.
+            height = max(height, dome * dome * (0.55 + 0.45 * simd_clamp(d.y / 0.6 + 0.5, 0, 1)))
+        }
+    }
+    return height
+}
+
+private let scaleCells: Float = 95
+
+private var scaleNormalMap: TextureImage {
+    get throws { try TextureImage.normalMap(size: 512, strength: 0.022) { scaleRelief($0, cells: scaleCells) } }
+}
+
+/// Glossy scale tops, rough grimy gaps.
+private var scaleRoughnessMap: TextureImage {
+    get throws {
+        try TextureImage.generateData(width: 512, height: 512) { uv in
+            let r = 0.85 - scaleRelief(uv, cells: scaleCells) * 0.5
+            return SIMD4(r, r, r, 1)
+        }
+    }
+}
+
+/// Darker veins radiating from the wing bones (along u), on a mottled membrane.
+private var membraneVeins: TextureImage {
+    get throws {
+        try TextureImage.generate(width: 256, height: 256) { uv in
+            let wobble = sin(uv.x * 23) * 0.025 + sin(uv.x * 61 + uv.y * 9) * 0.01
+            let lane = abs(fmodf(uv.y * 6 + wobble * 6 + 10, 1) - 0.5)
+            let vein = exp(-pow(lane * 16, 2)) * (0.25 + 0.75 * uv.x)
+            let mottle = 0.92 + 0.08 * sin(uv.x * 37 + sin(uv.y * 29) * 2)
+            let k = (1 - vein * 0.45) * mottle
+            return RGBAColor(sRGB: [k, k * 0.95, k * 0.92])
+        }
+    }
+}
+
+private extension MeshData {
+    /// Packs a uniform-density UV atlas so the scale texture keeps one size across the part, then adds tangents.
+    func scaleSurface() throws -> MeshData {
+        try unwrappingUV(UVUnwrapOptions(padding: 2.0 / 512)).generatingTangents()
+    }
+}
+
+/// A smooth curve through every point.
+private func catmullRom(_ points: [SIMD3<Float>], samples: Int) -> [SIMD3<Float>] {
+    let segments = points.count - 1
+    return (0...samples).map { i in
+        let f = Float(i) / Float(samples) * Float(segments)
+        let k = min(Int(f), segments - 1), t = f - Float(k)
+        let p0 = points[max(k - 1, 0)], p1 = points[k], p2 = points[k + 1], p3 = points[min(k + 2, segments)]
+        let t2 = t * t, t3 = t2 * t
+        let a = 2 * p1, b = p2 - p0
+        let c = 2 * p0 - 5 * p1 + 4 * p2 - p3
+        let d = -p0 + 3 * p1 - 3 * p2 + p3
+        return 0.5 * (a + b * t + c * t2 + d * t3)
+    }
+}
 
 private func scaleColor(_ v: MeshVertex) -> RGBAColor {
     // Crimson back, darker flanks, banded golden belly plates.
