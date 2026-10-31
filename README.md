@@ -30,4 +30,4 @@ open RealitizerQuest.xcodeproj
 
 realitizer がシェーダーを同梱しているため、初回は Metal Toolchain が要る（`xcodebuild -downloadComponent MetalToolchain`）。
 
-起動引数 `-debugBattle <mokorin|kinokoro|yoroigani|varg>` を付けると、タイトルを飛ばしてその敵との戦闘から始まる。
+起動引数 `-debugBattle <mokorin|kinokoro|yoroigani|varg>` を付けると、タイトルを飛ばしてその敵との戦闘から始まる（`varg` は Lv 8・ボス HP 1/5 で始まるのでエンディングの確認に使える）。

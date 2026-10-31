@@ -13,8 +13,8 @@ enum MonsterKind: CaseIterable, Sendable {
         case .varg: "黒竜ヴァルグ"
         }
     }
-    var maxHP: Int { switch self { case .mokorin: 8; case .kinokoro: 15; case .yoroigani: 30; case .varg: 220 } }
-    var attack: Int { switch self { case .mokorin: 6; case .kinokoro: 8; case .yoroigani: 15; case .varg: 30 } }
+    var maxHP: Int { switch self { case .mokorin: 8; case .kinokoro: 15; case .yoroigani: 30; case .varg: 170 } }
+    var attack: Int { switch self { case .mokorin: 6; case .kinokoro: 8; case .yoroigani: 15; case .varg: 27 } }
     var defense: Int { switch self { case .mokorin: 2; case .kinokoro: 5; case .yoroigani: 12; case .varg: 18 } }
     var exp: Int { switch self { case .mokorin: 3; case .kinokoro: 6; case .yoroigani: 13; case .varg: 0 } }
     var isBoss: Bool { self == .varg }
@@ -114,6 +114,7 @@ final class Game {
                 startAdventure()
                 if kind.isBoss { hero.level = 8; hero.maxHP = 95; hero.maxMP = 38; hero.attack = 36; hero.defense = 25; hero.restore() }
                 await startBattle(kind)
+                if kind.isBoss { enemyHP = kind.maxHP / 5 }  // reach the ending quickly
             }
         } catch {
             loadError = "\(error)"
