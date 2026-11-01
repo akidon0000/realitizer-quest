@@ -161,6 +161,183 @@ func makeKinokoro() throws -> ModelAssetDefinition {
     return try asset.validated()
 }
 
+/// Kokegame: a sleepy turtle whose shell is a mossy boulder, with clover and a flower growing on top.
+func makeKokegame() throws -> ModelAssetDefinition {
+    func ramp(_ x: Float) -> Float { let t = min(max(x, 0), 1); return t * t * (3 - 2 * t) }
+    // Height of the shell dome at radius r (before the z stretch), used to plant things on it.
+    func domeHeight(_ r: Float) -> Float { 0.34 * sqrt(max(0, 1 - (r / 0.445) * (r / 0.445))) }
+
+    let dome = try MeshBuilder.revolve(
+        profile: [[0, 0], [0.4, 0], [0.44, 0.05], [0.41, 0.15], [0.33, 0.25], [0.19, 0.32], [0, 0.34]],
+        segments: 40)
+        .moved(.zero, scale: [1, 1, 1.18])
+        .noiseDisplaced(amplitude: 0.03, frequency: 6, seed: 21)
+    var rimStones: [MeshData] = []
+    let stone = try MeshBuilder.sphere(radius: 0.07, latitudeSegments: 8, longitudeSegments: 12)
+        .noiseDisplaced(amplitude: 0.015, frequency: 12, seed: 5)
+    for i in 0..<16 {
+        let a = Float(i) / 16 * 2 * .pi + hash01(i, 0, 4) * 0.2
+        let s = 0.8 + hash01(i, 1, 4) * 0.4
+        rimStones.append(stone.moved(
+            [sin(a) * 0.42, 0.05, cos(a) * 0.42 * 1.18], rotation: .y(a), scale: [s * 1.1, s * 0.6, s * 0.8]))
+    }
+    let shell = try merge([dome] + rimStones)
+        .recalculatingNormals(smoothingAngle: .pi / 3)
+        .coloring { v in
+            let p = v.position
+            // Moss settles on the upper half with a ragged edge; the stone darkens toward the rim.
+            let ragged = sin(p.x * 23 + 1.3) * sin(p.z * 19 - 0.7) * 0.04
+            let moss = ramp((p.y - 0.14 + ragged) / 0.07)
+            let stoneColor = RGBAColor(sRGB: [0.36, 0.34, 0.31]).interpolated(
+                to: RGBAColor(sRGB: [0.56, 0.54, 0.49]), fraction: ramp(p.y / 0.2))
+            let mossColor = RGBAColor(sRGB: [0.27, 0.43, 0.14]).interpolated(
+                to: RGBAColor(sRGB: [0.46, 0.62, 0.22]), fraction: 0.5 + ragged * 12)
+            return stoneColor.interpolated(to: mossColor, fraction: moss)
+        }
+    let belly = try MeshBuilder.sphere(radius: 0.38, latitudeSegments: 12, longitudeSegments: 24)
+        .moved([0, 0.01, 0], scale: [1, 0.2, 1.16])
+
+    var grass: [MeshData] = []
+    let blade = try MeshBuilder.cone(radius: 0.012, height: 0.07, segments: 5)
+    for i in 0..<34 {
+        let a = hash01(i, 2, 9) * 2 * .pi
+        let r = 0.05 + hash01(i, 3, 9) * 0.27
+        let tilt = (hash01(i, 4, 9) - 0.5) * 0.7
+        let h = 0.6 + hash01(i, 5, 9) * 0.7
+        grass.append(blade.moved(
+            [sin(a) * r, domeHeight(r) + 0.01, cos(a) * r * 1.18],
+            rotation: simd_quatf(angle: tilt, axis: [cos(a), 0, -sin(a)]), scale: [1, h, 1]))
+    }
+    func clover(_ at: SIMD3<Float>, turn: Float) throws -> [MeshData] {
+        let leaflet = try MeshBuilder.sphere(radius: 0.04, latitudeSegments: 6, longitudeSegments: 12)
+        var meshes = [try MeshBuilder.cylinder(radius: 0.007, height: 0.08, segments: 6).moved(at + [0, 0.04, 0])]
+        for k in 0..<3 {
+            let a = Float(k) / 3 * 2 * .pi + turn
+            meshes.append(leaflet.moved(
+                at + [sin(a) * 0.035, 0.085, cos(a) * 0.035],
+                rotation: .y(a) * .x(-0.35), scale: [1, 0.16, 0.85]))
+        }
+        return meshes
+    }
+    let clovers = try merge(clover([0.1, domeHeight(0.12), -0.12], turn: 0.4)
+        + clover([0.2, domeHeight(0.22), 0.1], turn: 1.3))
+    let flowerStem = try MeshBuilder.cylinder(radius: 0.008, height: 0.13, segments: 6).moved([0, 0.065, 0])
+    let petal = try MeshBuilder.sphere(radius: 0.032, latitudeSegments: 6, longitudeSegments: 10)
+    let petals = try merge((0..<5).map { k in
+        let a = Float(k) / 5 * 2 * .pi
+        return petal.moved([sin(a) * 0.033, 0.135, cos(a) * 0.033], rotation: .y(a) * .x(-0.3), scale: [0.7, 0.22, 1.1])
+    })
+    let pollen = try MeshBuilder.sphere(radius: 0.02, latitudeSegments: 6, longitudeSegments: 10)
+        .moved([0, 0.14, 0], scale: [1, 0.6, 1])
+
+    // Head with heavy, half-closed lids and a short horn beak.
+    let lid = try MeshBuilder.sphere(radius: 0.038, latitudeSegments: 8, longitudeSegments: 12)
+    let head = try merge([
+        MeshBuilder.sphere(radius: 0.14, latitudeSegments: 16, longitudeSegments: 24).moved(.zero, scale: [1, 0.86, 1.1]),
+        MeshBuilder.sphere(radius: 0.085, latitudeSegments: 10, longitudeSegments: 16).moved([0, -0.03, 0.1], scale: [1.1, 0.8, 1]),
+        lid.moved([-0.088, 0.05, 0.085], rotation: .z(0.25), scale: [1.15, 0.55, 0.95]),
+        lid.moved([0.088, 0.05, 0.085], rotation: .z(-0.25), scale: [1.15, 0.55, 0.95]),
+    ]).recalculatingNormals(smoothingAngle: .pi / 2)
+    let eye = try MeshBuilder.sphere(radius: 0.03, latitudeSegments: 8, longitudeSegments: 12)
+    let eyes = merge2(eye.moved([-0.09, 0.03, 0.09], scale: [1, 0.9, 0.8]), eye.moved([0.09, 0.03, 0.09], scale: [1, 0.9, 0.8]))
+    let glint = try MeshBuilder.sphere(radius: 0.008, latitudeSegments: 4, longitudeSegments: 6)
+    let glints = merge2(glint.moved([-0.088, 0.036, 0.114]), glint.moved([0.092, 0.036, 0.114]))
+    let nostril = try MeshBuilder.sphere(radius: 0.008, latitudeSegments: 4, longitudeSegments: 6)
+    let beak = try merge([
+        MeshBuilder.sphere(radius: 0.05, latitudeSegments: 8, longitudeSegments: 14).moved([0, -0.05, 0.16], scale: [1.2, 0.42, 0.6]),
+        nostril.moved([-0.022, -0.005, 0.178]),
+        nostril.moved([0.022, -0.005, 0.178]),
+    ])
+    let neck = try MeshBuilder.sphere(radius: 0.085, latitudeSegments: 10, longitudeSegments: 16)
+        .moved(.zero, scale: [1, 0.95, 1.7])
+
+    // Stubby legs hang from the hip; the foot sits on the ground.
+    let nail = try MeshBuilder.sphere(radius: 0.02, latitudeSegments: 4, longitudeSegments: 8)
+    let leg = try merge([
+        MeshBuilder.cylinder(radius: 0.075, height: 0.13, segments: 12).moved([0, -0.06, 0]),
+        MeshBuilder.sphere(radius: 0.085, latitudeSegments: 8, longitudeSegments: 14).moved([0, -0.13, 0.02], scale: [1.05, 0.5, 1.2]),
+    ]).noiseDisplaced(amplitude: 0.006, frequency: 30, seed: 2)
+    let nails = try merge((-1...1).map { k in nail.moved([Float(k) * 0.04, -0.14, 0.11 - abs(Float(k)) * 0.01], scale: [1, 0.7, 1.2]) })
+    let tail = try MeshBuilder.cone(radius: 0.045, height: 0.13, segments: 8)
+
+    var asset = ModelAssetDefinition(
+        name: "Kokegame",
+        materials: [
+            material("shell", [1, 1, 1], roughness: 0.92, vertexColor: true),
+            material("belly", [0.74, 0.66, 0.48], roughness: 0.8),
+            material("skin", [0.52, 0.49, 0.33], roughness: 0.75),
+            material("beak", [0.33, 0.28, 0.2], roughness: 0.4),
+            material("ink", [0.05, 0.04, 0.04], roughness: 0.15),
+            material("glint", [1, 1, 1], roughness: 0.1),
+            material("nail", [0.84, 0.79, 0.64], roughness: 0.4),
+            material("leaf", [0.3, 0.58, 0.2], doubleSided: true),
+            material("petal", [0.98, 0.96, 0.92], roughness: 0.5, doubleSided: true),
+            material("pollen", [0.98, 0.76, 0.18], roughness: 0.6),
+        ],
+        parts: [
+            part("shell", shell, "shell", at: [0, 0.17, 0]),
+            part("belly", belly, "belly", parent: "shell"),
+            part("grass", try merge(grass), "leaf", parent: "shell"),
+            part("clovers", clovers, "leaf", parent: "shell"),
+            part("flower", flowerStem, "leaf", at: [-0.13, domeHeight(0.14), 0.05], parent: "shell"),
+            part("petals", petals, "petal", parent: "flower"),
+            part("pollen", pollen, "pollen", parent: "flower"),
+            part("neck", neck, "skin", at: [0, 0.1, 0.46], rotation: .x(-0.35), parent: "shell"),
+            part("head", head, "skin", at: [0, 0.04, 0.14], rotation: .x(0.35), parent: "neck"),
+            part("eyes", eyes, "ink", parent: "head"),
+            part("glints", glints, "glint", parent: "head"),
+            part("beak", beak, "beak", parent: "head"),
+            part("legFL", leg, "skin", at: [0.3, 0, 0.3], rotation: .z(0.15), parent: "shell"),
+            part("legFR", leg, "skin", at: [-0.3, 0, 0.3], rotation: .z(-0.15), parent: "shell"),
+            part("legBL", leg, "skin", at: [0.3, 0, -0.32], rotation: .z(0.15), parent: "shell"),
+            part("legBR", leg, "skin", at: [-0.3, 0, -0.32], rotation: .z(-0.15), parent: "shell"),
+            part("nailsFL", nails, "nail", parent: "legFL"),
+            part("nailsFR", nails, "nail", parent: "legFR"),
+            part("nailsBL", nails, "nail", parent: "legBL"),
+            part("nailsBR", nails, "nail", parent: "legBR"),
+            part("tail", tail, "skin", at: [0, 0.05, -0.52], rotation: .x(-.pi / 2 - 0.3), parent: "shell"),
+        ])
+    asset.clips = [
+        try bakeClip("idle", asset: asset, duration: 2.4, loop: true) { t in
+            let s = sin(t / 2.4 * 2 * .pi)
+            let look = sin(t / 2.4 * 2 * .pi + 1)
+            return [
+                "shell": offset("shell", in: asset, scale: [1, 1 + s * 0.015, 1]),
+                "neck": offset("neck", in: asset, rotation: .x(s * 0.06), translation: [0, 0, s * 0.015]),
+                "head": offset("head", in: asset, rotation: .y(look * 0.2) * .x(-s * 0.05)),
+                "flower": offset("flower", in: asset, rotation: .z(look * 0.18) * .x(s * 0.1)),
+                "tail": offset("tail", in: asset, rotation: .z(s * 0.3)),
+            ]
+        },
+        try bakeClip("attack", asset: asset, duration: 0.8, loop: false) { t in
+            let u = t / 0.8
+            let windUp = sin(ramp(u / 0.35) * .pi / 2) * (1 - ramp((u - 0.35) / 0.15))
+            let k = sin(min(max((u - 0.3) / 0.6, 0), 1) * .pi)
+            return [
+                "shell": offset("shell", in: asset, rotation: .x(k * 0.18 - windUp * 0.1),
+                                translation: [0, k * 0.08, k * 0.5 - windUp * 0.06]),
+                "neck": offset("neck", in: asset, translation: [0, 0, -windUp * 0.1 + k * 0.05]),
+                "head": offset("head", in: asset, rotation: .x(k * 0.35)),
+                "flower": offset("flower", in: asset, rotation: .x(-k * 0.5)),
+            ]
+        },
+        try bakeClip("hurt", asset: asset, duration: 0.6, loop: false) { t in
+            let k = sin(min(t / 0.6, 1) * .pi)
+            let tuck: Float = 1 - k * 0.45
+            return [
+                "shell": offset("shell", in: asset, rotation: .z(sin(t * 40) * 0.1 * k), translation: [0, -k * 0.03, -k * 0.1]),
+                // Pulls its head and legs into the shell.
+                "neck": offset("neck", in: asset, translation: [0, -k * 0.03, -k * 0.17], scale: [tuck, tuck, tuck]),
+                "legFL": offset("legFL", in: asset, scale: [1, tuck, 1]),
+                "legFR": offset("legFR", in: asset, scale: [1, tuck, 1]),
+                "legBL": offset("legBL", in: asset, scale: [1, tuck, 1]),
+                "legBR": offset("legBR", in: asset, scale: [1, tuck, 1]),
+            ]
+        },
+    ]
+    return try asset.validated()
+}
+
 /// Yoroigani: an armored crab with a spiked shell and heavy claws.
 func makeYoroigani() throws -> ModelAssetDefinition {
     let shell = try MeshBuilder.sphere(radius: 0.4, latitudeSegments: 16, longitudeSegments: 28)
@@ -258,4 +435,5 @@ func merge3(_ a: MeshData, _ b: MeshData, _ c: MeshData) -> MeshData { try! merg
 
 #Preview("Mokorin") { ModelAssetPreview(asset: try! makeMokorin()) }
 #Preview("Kinokoro") { ModelAssetPreview(asset: try! makeKinokoro()) }
+#Preview("Kokegame") { ModelAssetPreview(asset: try! makeKokegame()) }
 #Preview("Yoroigani") { ModelAssetPreview(asset: try! makeYoroigani()) }

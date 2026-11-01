@@ -163,12 +163,12 @@ final class GameScene {
     }
 
     func showBestiary(_ kind: MonsterKind) {
-        showBattleStage(kind.isBoss ? .lair : kind == .yoroigani ? .forest : .plains)
+        showBattleStage(kind.isBoss ? .lair : [.kokegame, .yoroigani].contains(kind) ? .forest : .plains)
         showcaseHero.instance.root.isEnabled = false
         show(monster: kind)
         inspectYaw = 0.6
         inspectPitch = kind.isBoss ? 0.15 : 0.22
-        inspectDistance = kind.isBoss ? 9.5 : 2.6
+        inspectDistance = kind.isBoss ? 9.5 : kind == .kokegame ? 3.3 : 2.6
         // Aim below the model's middle so it sits above the entry card.
         cameraMode = .inspect(center: kind.isBoss ? [0, 0.75, -0.3] : [0, 0.18, 0])
     }
@@ -489,6 +489,7 @@ struct GameAssets: Sendable {
             monsters: [
                 .mokorin: try named("mokorin", makeMokorin),
                 .kinokoro: try named("kinokoro", makeKinokoro),
+                .kokegame: try named("kokegame", makeKokegame),
                 .yoroigani: try named("yoroigani", makeYoroigani),
                 .varg: try named("varg", makeDragon),
             ],

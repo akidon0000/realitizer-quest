@@ -15,7 +15,7 @@
 | ファイル | 中身 |
 |---|---|
 | `Models/HeroModel.swift` | 主人公（兜・マント・剣・盾）と歩行/待機クリップ |
-| `Models/MonsterModels.swift` | モコリン・キノコロ・ヨロイガニ。各モデルに idle / attack / hurt クリップ |
+| `Models/MonsterModels.swift` | モコリン・キノコロ・コケガメ・ヨロイガニ。各モデルに idle / attack / hurt クリップ |
 | `Models/DragonModel.swift` | 炎竜ヴァルグ。胴・首・尾は 9 関節で曲がるスキンメッシュ、頭・顎・角・翼・脚は関節に付く剛体パーツ。頭蓋パーツ（skull）の鼻先にゲーム側で炎のパーティクルを付ける |
 | `Models/FieldModels.swift` | `WorldMap` から組み立てるフィールド一式、戦闘ステージ 3 種、戦闘エフェクト |
 
@@ -32,4 +32,4 @@ open RealitizerQuest.xcodeproj
 
 realitizer がシェーダーを同梱しているため、初回は Metal Toolchain が要る（`xcodebuild -downloadComponent MetalToolchain`）。
 
-起動引数 `-debugBattle <mokorin|kinokoro|yoroigani|varg>` を付けると、タイトルを飛ばしてその敵との戦闘から始まる（`varg` は Lv 8・ボス HP 1/5 で始まるのでエンディングの確認に使える）。`-bestiary <0-3>` で図鑑の該当ページから始まる。
+起動引数 `-debugBattle <mokorin|kinokoro|kokegame|yoroigani|varg>` を付けると、タイトルを飛ばしてその敵との戦闘から始まる（`varg` は Lv 8・ボス HP 1/5 で始まるのでエンディングの確認に使える）。`-bestiary <0-4>` で図鑑の該当ページから始まる。

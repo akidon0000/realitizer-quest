@@ -3,20 +3,21 @@ import Observation
 import simd
 
 enum MonsterKind: CaseIterable, Sendable {
-    case mokorin, kinokoro, yoroigani, varg
+    case mokorin, kinokoro, kokegame, yoroigani, varg
 
     var name: String {
         switch self {
         case .mokorin: "モコリン"
         case .kinokoro: "キノコロ"
+        case .kokegame: "コケガメ"
         case .yoroigani: "ヨロイガニ"
         case .varg: "炎竜ヴァルグ"
         }
     }
-    var maxHP: Int { switch self { case .mokorin: 8; case .kinokoro: 15; case .yoroigani: 30; case .varg: 170 } }
-    var attack: Int { switch self { case .mokorin: 6; case .kinokoro: 8; case .yoroigani: 15; case .varg: 27 } }
-    var defense: Int { switch self { case .mokorin: 2; case .kinokoro: 5; case .yoroigani: 12; case .varg: 18 } }
-    var exp: Int { switch self { case .mokorin: 3; case .kinokoro: 6; case .yoroigani: 13; case .varg: 0 } }
+    var maxHP: Int { switch self { case .mokorin: 8; case .kinokoro: 15; case .kokegame: 22; case .yoroigani: 30; case .varg: 170 } }
+    var attack: Int { switch self { case .mokorin: 6; case .kinokoro: 8; case .kokegame: 10; case .yoroigani: 15; case .varg: 27 } }
+    var defense: Int { switch self { case .mokorin: 2; case .kinokoro: 5; case .kokegame: 10; case .yoroigani: 12; case .varg: 18 } }
+    var exp: Int { switch self { case .mokorin: 3; case .kinokoro: 6; case .kokegame: 9; case .yoroigani: 13; case .varg: 0 } }
     var isBoss: Bool { self == .varg }
 }
 
@@ -107,7 +108,7 @@ final class Game {
             try scene.load(assets)
             scene.showTitle()
             mode = .title
-            // Development shortcut: launch with `-debugBattle <mokorin|kinokoro|yoroigani|varg>`.
+            // Development shortcut: launch with `-debugBattle <mokorin|kinokoro|kokegame|yoroigani|varg>`.
             let args = ProcessInfo.processInfo.arguments
             if let i = args.firstIndex(of: "-bestiary"), i + 1 < args.count, let index = Int(args[i + 1]) {
                 bestiaryIndex = index
@@ -239,9 +240,9 @@ final class Game {
         let east = position.x >= 10
         let table: [MonsterKind] = switch (east, tile == .forest) {
         case (false, false): [.mokorin, .mokorin, .kinokoro]
-        case (false, true): [.mokorin, .kinokoro, .kinokoro]
+        case (false, true): [.mokorin, .kinokoro, .kokegame]
         case (true, false): [.kinokoro, .kinokoro, .yoroigani]
-        case (true, true): [.kinokoro, .yoroigani, .yoroigani]
+        case (true, true): [.kokegame, .yoroigani, .yoroigani]
         }
         return table.randomElement()!
     }
